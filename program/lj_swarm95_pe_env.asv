@@ -1,0 +1,70 @@
+function [BATHY, TEMPR, SRC, RCV] = lj_swarm95_pe_env( ix_tw)
+
+ix_tw=25;
+load envsample.mat
+temp_prof = squeeze(TEMPR.temp(:,end,:));
+theta = 5/180*pi; %
+
+for ix = 1:length(TEMPR.PEgridx)
+% r = 5e3;
+% oval = 1;
+% gt =0 ;
+% if oval==1
+%     cx = max(max(TEMPR.PEgridx))/2;  %oval
+%     cy = 0;
+%     %cy = (gt-datenum([2006 8 17 21 32 0]))*24*60/3*2e3;  %oval
+%     p1 = (gt-datenum([2006 8 17 21 31 0]))*pi;
+%     a=r/9+r/40*cos(p1);
+%     b=r/9*r/3/a;
+% else
+%     cy = round((gt-datenum([2006 8 17 21 33 0]))*24*60/4* (size(oilshape,1)/2));
+% end
+% alpha = 10/180*pi;
+SR=10;
+gridy = linspace(-200,500,20*SR);
+gridx = linspace(1.17e4,1.22e4,20*SR);
+temp = zeros(length(gridy),length(gridx),19);
+TEMPR.temp = temp;
+TEMPR.PEgridx = gridx;
+TEMPR.PEgridy = gridy;
+plume_h = 30;
+plume_d = 20;
+ellipse.kv = plume_d / 2;
+plume_ix1 = find(TEMPR.gridz >= plume_h,1,'first');
+plume_ix2 = find(TEMPR.gridz >= plume_h+plume_d,1,'first');
+ellipse.c = [ mean(ellipse.x_reg{ix_tw}),mean(ellipse.y_reg{ix_tw})];
+ellipse.kh=0.5*min((ellipse.x_reg{ix_tw}-ellipse.c(1)).^2+(ellipse.y_reg{ix_tw}-ellipse.c(2)).^2).^0.5;
+ellipse.kh = 60;
+Q1=[1.146e4 427]';
+Q2=[1.255e4 -176]';
+
+
+plume_temp = -7 * ones(plume_ix2-plume_ix1+1,1); %ssp ~= 1406m/s @ T(water) = -7C, crude oil @25C     
+for ix1=1:size(TEMPR.temp,1)
+    for ix2=1:size(TEMPR.temp,2)
+            if  inpolygon(TEMPR.PEgridx(ix2), TEMPR.PEgridy(ix1),...
+                    ellipse.y_reg{ix_tw}, ellipse.x_reg{ix_tw})
+                if ellipse.gaussian ~=1                                 
+                    TEMPR.temp(ix1,ix2,:) = temp_prof;
+                    TEMPR.temp(ix1,ix2, plume_ix1:plume_ix2) = plume_temp; %ssp ~= 1406m/s @ T(water) = -7C, crude oil @25C     
+                else
+                    P=[TEMPR.PEgridx(ix2),TEMPR.PEgridy(ix1)]';
+                    h1 = abs(det([Q2-Q1,P-Q1]))/((Q2(1)-Q1(1))^2+(Q2(2)-Q1(2))^2).^0.5;
+                    %h1=min((ellipse.x_reg{ix_tw}-TEMPR.PEgridy(ix1)).^2+(ellipse.y_reg{ix_tw}-TEMPR.PEgridx(ix2)).^2).^0.5;
+                    h2 = exp(-(h1/ellipse.kh).^2);
+                    TEMPR.temp(ix1,ix2,:) = temp_prof;
+                    z1 =  TEMPR.gridz(plume_ix1:plume_ix2) - plume_h - plume_d/2;
+                    z2 = exp(-(z1/ellipse.kv).^2).';
+                     TEMPR.temp(ix1,ix2, plume_ix1:plume_ix2) =  (plume_temp - temp_prof(plume_ix1:plume_ix2))*h2.*z2...
+                         + temp_prof(plume_ix1:plume_ix2);
+                    
+                end
+            else                                
+                TEMPR.temp(ix1,ix2,:) = temp_prof;      
+            end                                 
+
+    end
+end
+
+%imagesc(TEMPR.PEgridx,TEMPR.PEgridy, TEMPR.temp(:,:,7))
+%axis equal

@@ -1,0 +1,93 @@
+clear all;
+%close all;
+
+ISOURCE = 'NRL300';
+%ISOURCE = 'UDelJ15';
+
+
+if strcmpi(ISOURCE,'nrl300')
+    matdir = '../mat/';
+elseif strcmpi(ISOURCE, 'udelj15')
+    matdir = '../mat_j15_1/';
+else
+    error('unknown source!');
+end
+
+envfilepath = [matdir,'env/'];
+peresultpath = [matdir, 'pe_result/'];
+ssp3dfieldpath = [matdir,'3d_field/'];
+
+
+%addpath ('../pe_toolbox');
+%addpath ('../runSW06_UDELevent50/EVENT50_3DENV/')
+%addpath ('../runSW06_UDELevent50/');
+
+
+for ix_tw = 25%1:length(ellipse.x_reg)
+    
+    isplot = 0;     % 0 means do not plot any figures that 3DPE generates
+    PEcoor.ylim = [-2500 2500];
+    PEcoor.zlim = [0 90];
+    PEcoor.dx = 100;
+    PEcoor.dy = 50;
+    PEcoor.dz = 5;
+
+    PEcoor.plot = 0;
+    PEcoor.clim = [10 25];
+    PEcoor.print = 0;
+    PEcoor.plot_radar = 0;
+    PEcoor.time = 0;
+    
+    switch ISOURCE,
+        case 'NRL300'
+            freqs = 300;   % source frequency
+            NOTE = '';
+            flag_j15_memerror = 0;
+        case 'UDelJ15'
+            freqs = 250;  % source frequency?
+            NOTE = 'CAUTION: CHECK THE J15 DISTANCE. (CUDA J15_MEMERROR)';
+            flag_j15_memerror = 1;
+    end
+    icase = 'event50';
+    ellipse.gaussian = 1;
+    
+    [BATHY, TEMPR, SRC, RCV] = lj_oil_plume_env_gomri2_resample( ellipse, ix_tw);
+%    TEMPR.src2rcvdist = 2e4;
+%     continue;
+    envfilename = sprintf('IW_ENV_%s_%s_s%05d.mat',ISOURCE,...
+        datestr(PEcoor.time,'ddmmmyy_HHMMSS'),ix_tw);
+    save([envfilepath,envfilename], 'BATHY','TEMPR','SRC','RCV','ISOURCE','NOTE');
+    [junk,itmp] = min(sqrt(TEMPR.globalx(:).^2+TEMPR.globaly(:).^2));
+    WD = BATHY.z(itmp);
+    % -- interpolate sound speeds
+    [CAL_GRID_X,CAL_GRID_Y] = meshgrid(TEMPR.PEgridx,TEMPR.PEgridy);
+    CAL_GRID_SSPDEPTH = repmat(shiftdim(TEMPR.gridz(:).',-1),[size(CAL_GRID_Y,1) size(CAL_GRID_X,2) 1]);
+    tmp_s = 35*ones(size(TEMPR.temp));
+    tmp_c = TEMPR.temp;
+    tmp_p = CAL_GRID_SSPDEPTH/.995;
+    CAL_GRID_SSP = sndspd(tmp_s,tmp_c,tmp_p,'chen');
+    % -- SRC to RCV distance
+    src2rcvdist = TEMPR.src2rcvdist;
+    % -- the following variabiles are going to the 3D acoustic model
+    % CAL_GRID_X, CAL_GRID_Y, CAL_GRID_Z, CAL_GRID_SSP
+    
+    if flag_j15_memerror == 1
+        j15_rcvr_dist = TEMPR.src2rcvdist - 1e3;
+    else
+        j15_rcvr_dist = TEMPR.src2rcvdist;
+    end
+    
+    ssp3dfield_filename = sprintf('%sSW50EVT50_3dfield_freq_%d_%s_s%05d.mat',...
+        ssp3dfieldpath,freqs,datestr(PEcoor.time,'ddmmmyy_HHMMSS'),ix_tw);
+    
+    
+    save(ssp3dfield_filename,'envfilepath','envfilename','CAL_GRID_X','CAL_GRID_Y',...
+        'CAL_GRID_SSP','CAL_GRID_SSPDEPTH','WD', 'flag_j15_memerror','j15_rcvr_dist' );
+    
+    
+end
+%rmpath ('./EVENT50_3DENV/')
+
+
+%runSW06_UDELevent50_cuda;
+%!copy D:\Jing\IW_shape\mat_j15\cuda\freq250_17Aug06_214000_s01_cuda.mat d:\jing\matlib\bin\250.mat
